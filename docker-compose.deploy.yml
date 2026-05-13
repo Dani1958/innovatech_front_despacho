@@ -1,0 +1,21 @@
+# ============================================================
+# Compose de PRODUCCIÓN - EC2 Frontend (pública)
+# ------------------------------------------------------------
+# Este archivo NO construye la imagen: la baja desde Docker Hub.
+# El pipeline de GitHub Actions hace el build y push,
+# luego este compose hace el pull y arranca el contenedor.
+# ============================================================
+
+services:
+  frontend:
+    image: ${DOCKERHUB_USERNAME}/innovatech-frontend:${IMAGE_TAG:-latest}
+    container_name: innovatech-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - public-net
+
+networks:
+  public-net:
+    driver: bridge

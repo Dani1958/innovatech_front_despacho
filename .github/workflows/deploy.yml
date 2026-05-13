@@ -1,0 +1,83 @@
+# ============================================================
+# CI/CD - Frontend (React/Vite + nginx)
+# ------------------------------------------------------------
+# Trigger: push a la rama "deploy"
+# Flujo:
+#   1) Checkout del código
+#   2) Login a Docker Hub
+#   3) Build de la imagen (multi-stage)
+#   4) Push a Docker Hub con dos tags: latest + SHA del commit
+#   5) SSH a la EC2 Frontend y pull + restart del contenedor
+# ============================================================
+
+name: Deploy Frontend
+
+on:
+  push:
+    branches:
+      - deploy
+
+env:
+  IMAGE_NAME: innovatech-frontend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ---------- 1. Checkout ----------
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      # ---------- 2. Login Docker Hub ----------
+      - name: Login a Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ---------- 3. Setup Buildx (mejor caché y multi-arch) ----------
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ---------- 4. Build & Push ----------
+      - name: Build y Push de la imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ---------- 5. Deploy en EC2 vía SSH ----------
+      - name: Deploy en EC2 Frontend
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_FRONT_HOST }}
+          username: ${{ secrets.EC2_USER }}      # típicamente "ubuntu" o "ec2-user"
+          key: ${{ secrets.EC2_SSH_KEY }}        # contenido del .pem
+          port: 22
+          script: |
+            set -e
+            cd /home/${{ secrets.EC2_USER }}/innovatech-frontend
+
+            # Login a Docker Hub en la EC2 (por si la imagen fuera privada)
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+            # Exportar variables que usa el compose
+            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+            export IMAGE_TAG="${{ github.sha }}"
+
+            # Pull de la nueva imagen y reinicio del servicio
+            docker compose -f docker-compose.deploy.yml pull
+            docker compose -f docker-compose.deploy.yml up -d --remove-orphans
+
+            # Limpieza de imágenes viejas
+            docker image prune -f
+
+            # Logout por higiene
+            docker logout
