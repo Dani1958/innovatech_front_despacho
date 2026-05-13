@@ -4,23 +4,6 @@ Aplicación web (SPA) de la marca Despacho de **Innovatech Chile**, construida c
 
 Forma parte del proyecto de **Evaluación Parcial N°2 — Introducción a Herramientas DevOps (ISY1101)**.
 
----
-
-## Tabla de contenidos
-
-1. [Arquitectura general](#arquitectura-general)
-2. [Stack técnico](#stack-técnico)
-3. [Estructura del repositorio](#estructura-del-repositorio)
-4. [Ejecución local sin Docker](#ejecución-local-sin-docker)
-5. [Ejecución local con Docker](#ejecución-local-con-docker)
-6. [Build de la imagen](#build-de-la-imagen)
-7. [Variables de entorno](#variables-de-entorno)
-8. [Pipeline CI/CD (GitHub Actions)](#pipeline-cicd-github-actions)
-9. [Despliegue en AWS EC2](#despliegue-en-aws-ec2)
-10. [Decisiones técnicas](#decisiones-técnicas)
-
----
-
 ## Arquitectura general
 
 ```
@@ -35,28 +18,7 @@ Forma parte del proyecto de **Evaluación Parcial N°2 — Introducción a Herra
                               │  (privada, :8080)   │
                               │  Spring Boot        │
                               └────────────────────┘
-```
 
-Solo el **frontend** está expuesto a Internet. Los backends conviven en subred privada y reciben tráfico únicamente desde el Security Group del frontend.
-
----
-
-## Stack técnico
-
-| Capa | Tecnología |
-|---|---|
-| Framework | React 18 |
-| Bundler | Vite 5 |
-| Estilos | Tailwind CSS 3 |
-| Routing | React Router 6 |
-| HTTP | Axios |
-| Servidor de producción | Nginx 1.27 (alpine) |
-| Contenedorización | Docker (multi-stage build) |
-| CI/CD | GitHub Actions |
-| Registry | Docker Hub |
-| Cloud | AWS EC2 |
-
----
 
 ## Estructura del repositorio
 
@@ -118,15 +80,6 @@ El [Dockerfile](./Dockerfile) está dividido en dos etapas:
 
 La imagen final pesa ~25 MB porque no incluye Node, `node_modules` ni el código fuente — solo el bundle estático.
 
----
-
-## Variables de entorno
-
-Esta app es estática (HTML/JS/CSS) por lo que **no usa variables de entorno en runtime**. Las URLs de los backends se definen en build time o vía proxy de Nginx (ver [`nginx.conf`](./nginx.conf), bloques `location /api/...`).
-
-Si necesitas reapuntar los endpoints, edita `vite.config.js` (dev) o las directivas `proxy_pass` en `nginx.conf` (prod) y vuelve a hacer build.
-
----
 
 ## Pipeline CI/CD (GitHub Actions)
 
@@ -194,27 +147,6 @@ git push origin deploy
 ```
 
 GitHub Actions construye, sube a Docker Hub y reinicia el contenedor en la EC2. La app queda accesible en `http://<IP-pública-EC2>`.
-
----
-
-## Decisiones técnicas
-
-### Multi-stage build
-**Por qué:** la etapa de build necesita ~400 MB (Node + dependencias). La etapa de runtime solo necesita Nginx servir HTML estático. Separarlas baja la imagen final de ~400 MB a ~25 MB → menos transferencia, menos superficie de ataque, despliegues más rápidos.
-
-### Usuario no-root (`USER nginx`)
-**Por qué:** si un atacante logra escapar del contenedor, no tiene privilegios de root sobre el host. Cumple el principio de **mínimo privilegio** (exigido por rúbrica IE1).
-
-### Tags `latest` + `${{ github.sha }}`
-**Por qué:** `latest` simplifica el pull en producción, pero el tag con SHA permite **trazabilidad por commit y rollback determinístico** (un deploy específico = un commit específico = una imagen específica).
-
-### Rama `deploy` como trigger
-**Por qué:** desacopla el desarrollo (rama `main`) del despliegue. El equipo puede mergear features a `main` sin desplegar hasta hacer un PR explícito a `deploy`. Esto es **promoción manual a producción**, una práctica DevOps básica.
-
-### Nginx vs `vite preview`
-**Por qué Nginx en lugar de servir con Node:** Nginx es C nativo, maneja miles de conexiones concurrentes con poca RAM, soporta caché HTTP de estáticos y es estándar en producción. `vite preview` es solo para validación local, no para producción.
-
----
 
 ## Información del curso
 
